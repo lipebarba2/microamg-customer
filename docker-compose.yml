@@ -1,62 +1,78 @@
-version: '3.9'
+version: '3.8'
 
 services:
-  postgres-customer:
+  customer:
+    build: .
+    container_name: customer-service
+    image: microservice-amg-customer
+    ports:
+      - "8082:8080"
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://129.148.55.47:5432/customer
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=admin
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - microservice-network
+
+  postgres:
     image: postgres:15
-    container_name: microservice-amg-postgres-customer
+    container_name: postgres-customer
+    restart: always
     environment:
       POSTGRES_DB: customer
       POSTGRES_USER: admin
       POSTGRES_PASSWORD: admin
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - postgres_customer_data:/var/lib/postgresql/data
+      - customer_pgdata:/var/lib/postgresql/data
+    networks:
+      - microservice-network
 
-  postgres-fraud:
-    image: postgres:15
-    container_name: microservice-amg-postgres-fraud
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
     environment:
-      POSTGRES_DB: fraud
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
     ports:
-      - "5433:5432"  # Porta 5433 no host, 5432 no container
-    volumes:
-      - postgres_fraud_data:/var/lib/postgresql/data
+      - "2181:2181"
+    networks:
+      - microservice-network
 
-  customer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: customer
-    container_name: microservice-amg-customer
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
     depends_on:
-      - postgres-customer
+      - zookeeper
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-customer:5432/customer
-      SPRING_DATASOURCE_USERNAME: admin
-      SPRING_DATASOURCE_PASSWORD: admin
-    ports:
-      - "8081:8081"
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - microservice-network
 
-  fraud:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        MODULE: fraud
-    container_name: microservice-amg-fraud
-    depends_on:
-      - postgres-fraud
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-fraud:5432/fraud
-      SPRING_DATASOURCE_USERNAME: admin
-      SPRING_DATASOURCE_PASSWORD: admin
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
     ports:
-      - "8082:8082"
+      - "8088:8080"
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+    networks:
+      - microservice-network
 
 volumes:
-  postgres_customer_data:
-  postgres_fraud_data:
+  customer_pgdata:
+
+networks:
+  microservice-network:

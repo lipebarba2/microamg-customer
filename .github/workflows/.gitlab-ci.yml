@@ -1,0 +1,64 @@
+name: First Pipeline \o/
+
+on:
+  # Trigger o workflow em push para a branch master
+  push:
+    branches:
+      - main
+  # Permite rodar o workflow manualmente na aba Actions do GitHub
+  workflow_dispatch:
+
+jobs:
+  build-and-push:
+    # Define o ambiente de execução
+    runs-on: ubuntu-latest
+
+    steps:
+      # Checkout do código do repositório
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Configura o Docker Buildx
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+
+      # Faz login no DockerHub usando secrets
+      - name: Log in to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # Constrói e envia a imagem Docker para o DockerHub
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: felipebarboza/microservice-amg:latest
+
+      # Passo para deploy na VM Oracle via SSH
+      - name: Deploy na VM Oracle
+        uses: appleboy/ssh-action@master
+        with:
+          host: 129.148.55.47
+          username: ubuntu
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          # Adiciona um timeout de 10 minutos para esta etapa
+          timeout: 10m # Pode ajustar para 5m, 15m, etc.
+          script: |
+            # Login no DockerHub na VM para pull da imagem
+            docker login -u felipebarboza -p ${{ secrets.DOCKER_PASSWORD }}
+            # Pull da imagem mais recente do DockerHub
+            docker pull felipebarboza/microservice-amg:latest
+            # Para o contêiner 'sofia-app' se ele estiver rodando (ignora erro se não existir)
+            docker stop sofia-app || true
+            # Remove o contêiner 'sofia-app' se ele existir (ignora erro se não existir)
+            docker rm sofia-app || true
+            # Roda um novo contêiner em modo detached (-d)
+            # Mapeia a porta 8081 do host para a porta 8081 do contêiner (-p 8081:8081)
+            # Atribui o nome 'sofia-app' ao contêiner (--name sofia-app)
+            # Usa a imagem que acabou de ser baixada
+            docker run -d -p 8081:8081 --name sofia-app felipebarboza/microservice-amg:latest
+
